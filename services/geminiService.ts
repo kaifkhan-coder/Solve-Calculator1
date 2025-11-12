@@ -1,4 +1,3 @@
-
 import { GoogleGenAI } from "@google/genai";
 
 const API_KEY = process.env.API_KEY;
@@ -8,42 +7,44 @@ if (!API_KEY) {
 }
 
 const ai = new GoogleGenAI({ apiKey: API_KEY });
-const model = "gemini-2.5-flash";
+const extractionModel = "gemini-2.5-pro";
 
-/**
- * Extracts a mathematical expression from an image using Gemini.
- * @param base64Image The base64 encoded image data.
- * @param mimeType The MIME type of the image.
- * @returns A promise that resolves to the extracted expression string.
- */
-export const extractExpressionFromImage = async (base64Image: string, mimeType: string): Promise<string> => {
+export const extractExpressionFromImage = async (base64Image, mimeType) => {
   try {
     const imagePart = {
       inlineData: {
-        mimeType: mimeType,
+        mimeType,
         data: base64Image,
       },
     };
 
-    const prompt = `You are an expert OCR system. Your task is to analyze the provided image and extract any visible mathematical expression.
-    - Only return the mathematical expression.
-    - Do not include any explanatory text, greetings, or apologies.
-    - Do not attempt to solve the expression.
-    - Ensure the operators (+, -, *, /) are correctly identified.
-    - If no valid mathematical expression is found, return the string "ERROR: No expression found".
-    
-    Example input: An image of "34+54+67+87".
-    Example output: 34+54+67+87`;
+    const prompt = `
+You are a highly advanced OCR system specialized in transcribing handwritten mathematical expressions.
+Your goal is to output a clean, single-line math expression ready for a calculator.
+
+RULES:
+1. Read left to right, top to bottom.
+2. Join multi-line math into one string.
+3. If no operator between numbers on different lines, assume '+'.
+4. Ignore non-math marks.
+5. Output only the expression, no extra words or explanations.
+6. Output must contain only digits and + - * / ( ) .
+IMPORTANT: Output exactly like this example: 25+30+40+60
+`;
 
     const response = await ai.models.generateContent({
-      model,
-      contents: { parts: [imagePart, { text: prompt }] },
+      model: extractionModel,
+      contents: { parts: [{ text: prompt }, imagePart] }, // ✅ prompt first
     });
 
-    const text = response.text.trim();
-    // A simple validation to ensure it looks like a math expression
+    let text = response.text.trim();
+
+    // ✅ Clean output
+    text = text.replace(/(expression|result|answer)[:\-]?\s*/gi, '');
+    text = text.replace(/\s+/g, '');
+
     if (text && /[0-9]/.test(text) && /[+\-*/]/.test(text)) {
-      return text.replace(/[^0-9.+\-*/\s()]/g, ''); // Sanitize the output
+      return text.replace(/[^0-9.+\-*/()]/g, '');
     } else if (text.startsWith("ERROR:")) {
       return text;
     } else {
@@ -55,38 +56,26 @@ export const extractExpressionFromImage = async (base64Image: string, mimeType: 
   }
 };
 
-/**
- * Calculates a mathematical expression using Gemini.
- * @param expression The mathematical expression string to calculate.
- * @returns A promise that resolves to the calculated result string.
- */
-export const calculateExpression = async (expression: string): Promise<string> => {
+export const calculateExpression = async (expression) => {
   try {
-    const prompt = `You are a powerful calculator. Your task is to evaluate the given mathematical expression and provide only the final numerical result.
-    - Only return the number.
-    - Do not include any explanations, steps, or units.
-    - If the expression is invalid or cannot be calculated, return the string "ERROR: Invalid expression".
-    
-    Example input: 34+54+67+87
-    Example output: 242
-    
-    Expression to solve: ${expression}`;
+    const sanitizedExpression = expression.replace(/[^0-9.+\-*/()\s]/g, '');
+    if (sanitizedExpression !== expression) {
+      return "ERROR: Expression contains invalid characters.";
+    }
 
-    const response = await ai.models.generateContent({
-      model,
-      contents: prompt,
-    });
+    // ✅ Prevent bad operator sequences
+    if (/[*\/+\-]{2,}/.test(sanitizedExpression)) {
+      return "ERROR: Invalid operator sequence.";
+    }
 
-    const text = response.text.trim();
-    if (!isNaN(parseFloat(text)) && isFinite(Number(text))) {
-        return text;
-    } else if(text.startsWith("ERROR:")) {
-        return text;
+    const result = new Function(`return ${sanitizedExpression}`)();
+    if (typeof result === 'number' && isFinite(result)) {
+      return result.toString();
     } else {
-        return "ERROR: AI returned an invalid numerical format.";
+      return "ERROR: Calculation resulted in an invalid number.";
     }
   } catch (error) {
-    console.error("Error calculating expression:", error);
-    return "ERROR: Failed to communicate with the AI model for calculation.";
+    console.error("Error calculating expression locally:", error);
+    return "ERROR: Invalid or unrecognized mathematical expression.";
   }
 };

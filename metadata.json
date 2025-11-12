@@ -1,5 +1,7 @@
 {
   "name": "Snap & Solve Calculator",
   "description": "An intelligent calculator that uses AI to solve mathematical expressions from an uploaded image. Simply upload a photo of a math problem, and the app will extract the numbers and operators to provide the final answer.",
-  "requestFramePermissions": []
+  "requestFramePermissions": [
+    "camera"
+  ]
 }
